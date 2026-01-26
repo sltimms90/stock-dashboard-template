@@ -3,6 +3,24 @@ import yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="My Portfolio", layout="wide")
+# --- PASSWORD PROTECTION ---
+# 1. Look for the password in secrets
+if "app_password" in st.secrets:
+    password = st.secrets["app_password"]
+    
+    # 2. Create a simple login box
+    # If the user hasn't entered the password yet, show the input
+    if "authenticated" not in st.session_state:
+        entered_password = st.text_input("🔒 Enter Password to View Portfolio", type="password")
+        if st.button("Login"):
+            if entered_password == password:
+                st.session_state["authenticated"] = True
+                st.rerun()  # Refresh to show the app
+            else:
+                st.error("Wrong password")
+        st.stop()  # Stop here, do not run the rest of the code!
+
+# --- END PROTECTION ---
 st.title("📈 My Leveraged Portfolio")
 
 # 1. Load Data
@@ -78,3 +96,4 @@ try:
 
 except Exception as e:
     st.error(f"Error: {e}")
+
