@@ -2,12 +2,12 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import altair as alt
-import twstock  # Requires: pip install twstock
+import twstock  # Requires: pip install twstock lxml
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="My Portfolio", layout="wide")
 
-# Custom CSS for the Hero Section
+# Custom CSS
 st.markdown("""
     <style>
     .hero-metric {
@@ -50,13 +50,9 @@ if "app_password" in st.secrets:
 
 # --- HELPER: HYBRID PRICE FETCHER ---
 def get_realtime_price(ticker_yf):
-    """
-    Tries to get real-time price from twstock (Taiwan SE).
-    Falls back to yfinance (15m delay) if that fails.
-    """
     ticker_clean = ticker_yf.split('.')[0]
     
-    # 1. Try TWSTOCK (Real-time)
+    # 1. Try TWSTOCK
     try:
         if ticker_clean.isdigit():
             stock = twstock.realtime.get(ticker_clean)
@@ -97,7 +93,6 @@ total_dividends = sum([item["Amount"] for item in dividends_data]) if dividends_
 total_expenses = sum([item["Amount"] for item in expenses_data]) if expenses_data else 0
 total_cash = sum([item["Amount"] for item in cash_data]) if cash_data else 0
 
-# Load Holdings
 def load_holdings():
     if not holdings_data: return pd.DataFrame()
     df = pd.DataFrame(holdings_data)
@@ -111,9 +106,11 @@ def load_holdings():
     df["Market_Value"] = df["Shares"] * df["Current_Price"]
     df["Cost_Value"] = df["Shares"] * df["Cost_Basis"]
     df["Unrealized_Gain"] = df["Market_Value"] - df["Cost_Value"]
-    df["Gain_Pct"] = (df["Unrealized_Gain"] / df["Cost_Value"])
-    df["Name"] = df["Ticker"].map(NAME_MAP).fillna(df["Ticker"])
     
+    # Calculate % Return (Multiply by 100 for proper formatting later)
+    df["Gain_Pct"] = (df["Unrealized_Gain"] / df["Cost_Value"]) * 100
+    
+    df["Name"] = df["Ticker"].map(NAME_MAP).fillna(df["Ticker"])
     return df
 
 try:
@@ -151,20 +148,17 @@ try:
 
     # 2. SUMMARY METRICS
     c1, c2, c3 = st.columns(3)
-    
     c1.metric(
         label="Investment P&L (Gross)",
         value=f"NT$ {gross_investment_pnl:,.0f}",
         delta="Pre-Fee Performance"
     )
-    
     c2.metric(
         label="Total Fees & Interest",
         value=f"-NT$ {total_expenses:,.0f}",
         delta="Expenses",
         delta_color="inverse"
     )
-    
     c3.metric(
         label="Cumulative Net P&L",
         value=f"NT$ {net_lifetime_pnl:,.0f}",
@@ -209,13 +203,14 @@ try:
     col_c.metric(
         label="Portfolio Age",
         value="Since Jan 2026",
-        delta=f"{inception_return_pct:.2f}% Inception Rtn"
+        delta=f"{inception_return_pct:.2f}% Inception Rtn",
+        help="Inception Return includes Realized Profits + Dividends + Unrealized Gains. Current dip is mostly from Unrealized Bond prices."
     )
 
     # 4. HOLDINGS TABLE
     if not df.empty:
-        # Prepare Data
-        df["Weight"] = (df["Market_Value"] / stock_value)
+        # Calculate Weight (0-100 scale for Progress Bar)
+        df["Weight"] = (df["Market_Value"] / stock_value) * 100
         
         # Sort
         df_sorted = df.sort_values(by="Market_Value", ascending=False).copy()
@@ -226,16 +221,16 @@ try:
             "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"
         ]]
 
-        # Add Total Row
+        # Add Total Row (With clean formatting)
         total_row = pd.DataFrame([{
             "Name": "TOTALS", 
-            "Ticker": "", 
+            "Ticker": "",  # Empty string to avoid "None"
             "Current_Price": None, 
             "Shares": None, 
             "Market_Value": stock_value, 
-            "Weight": 1.0, 
+            "Weight": 100.0, 
             "Unrealized_Gain": unrealized_profit, 
-            "Gain_Pct": (unrealized_profit/total_cost_basis) if total_cost_basis else 0
+            "Gain_Pct": (unrealized_profit/total_cost_basis * 100) if total_cost_basis else 0
         }])
         
         final_table = pd.concat([display_df, total_row], ignore_index=True)
@@ -247,6 +242,7 @@ try:
             hide_index=True,
             column_config={
                 "Name": "Company",
+                "Ticker": "Ticker",
                 "Current_Price": st.column_config.NumberColumn(
                     "Price", format="NT$ %.1f"
                 ),
@@ -257,7 +253,7 @@ try:
                     "Unrealized", format="NT$ %.0f"
                 ),
                 "Weight": st.column_config.ProgressColumn(
-                    "Weight", format="%.1f%%", min_value=0, max_value=1
+                    "Weight", format="%.1f%%", min_value=0, max_value=100
                 ),
                 "Gain_Pct": st.column_config.NumberColumn(
                     "Return", format="%.2f%%"
