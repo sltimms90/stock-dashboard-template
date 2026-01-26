@@ -77,24 +77,20 @@ try:
 
     st.markdown("---")
     
-    # Breakdown Row
+# Breakdown Row: Assets on Left, Performance on Right
     c1, c2, c3, c4, c5 = st.columns(5)
     
-    # 1. Paper Profits (Open)
-    c1.metric("Unrealized Gains", f"${unrealized_profit:,.0f}", 
+    # 1. Current Assets (The "What I Have")
+    c1.metric("Stock Value", f"${stock_value:,.0f}")
+    c2.metric("Cash on Hand", f"${total_cash:,.0f}")
+    
+    # 2. Performance (The "How It's Doing")
+    c3.metric("Unrealized Gains", f"${unrealized_profit:,.0f}", 
               delta=f"{unrealized_profit:,.0f}")
     
-    # 2. Locked-in Profits (Closed)
-    c2.metric("Realized Sales", f"${realized_profit:,.0f}")
-    
-    # 3. Income
-    c3.metric("Dividends", f"${total_dividends:,.0f}")
-    
-    # 4. Asset Value
-    c4.metric("Stock Value", f"${stock_value:,.0f}")
-    
-    # 5. Liquidity
-    c5.metric("Cash on Hand", f"${total_cash:,.0f}")
+    # 3. Banked Income (The "Already in Pocket")
+    c4.metric("Realized Sales", f"${realized_profit:,.0f}")
+    c5.metric("Dividends", f"${total_dividends:,.0f}")
     
     if not df.empty:
         st.subheader("Current Holdings")
@@ -108,5 +104,6 @@ try:
 
 except Exception as e:
     st.error(f"Error: {e}")
+
 
 
