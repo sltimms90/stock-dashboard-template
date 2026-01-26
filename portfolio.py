@@ -4,64 +4,115 @@ import pandas as pd
 
 # 1. Page Config
 st.set_page_config(page_title="My Portfolio", layout="wide")
-st.title("📈 My Stock Portfolio")
+st.title("📈 My Leveraged Portfolio")
 
-# 2. Define your portfolio (You can eventually move this to a database or CSV)
-# Replace with your actual holdings
-# Instead of hardcoding, we pull from Streamlit Secrets
-portfolio_data = st.secrets["holdings"]
+# 2. Load Data
+holdings_data = st.secrets.get("holdings", [])
+sales_data = st.secrets.get("sales", [])
+dividends_data = st.secrets.get("dividends", [])
+expenses_data = st.secrets.get("expenses", [])
 
-# 3. Fetch Live Data
-def load_data():
-    df = pd.DataFrame(portfolio_data)
+# 3. Calculate Financials
+# A. Realized Profit (Past Sales)
+realized_profit = 0
+if sales_data:
+    realized_profit = sum([item["Profit"] for item in sales_data])
+
+# B. Dividends
+total_dividends = 0
+if dividends_data:
+    total_dividends = sum([item["Amount"] for item in dividends_data])
+
+# C. Expenses (Loan Interest, Fees, Taxes)
+total_expenses = 0
+if expenses_data:
+    total_expenses = sum([item["Amount"] for item in expenses_data])
+
+# 4. Fetch Live Data
+def load_holdings():
+    if not holdings_data:
+        return pd.DataFrame()
+        
+    df = pd.DataFrame(holdings_data)
     tickers = " ".join(df["Ticker"].tolist())
     
-    # Download live data from Yahoo Finance
-    data = yf.download(tickers, period="1d")['Close']
+    if len(df) > 0:
+        # Fetch data
+        data = yf.download(tickers, period="1d")['Close']
     
-    # Get the latest price for each ticker
     current_prices = []
     for ticker in df["Ticker"]:
-        # Handle cases where data might return multiple rows or single value
         try:
-            price = data[ticker].iloc[-1]
+            # Handle data structure variations
+            if len(df) == 1:
+                price = float(data.iloc[-1])
+            else:
+                price = float(data[ticker].iloc[-1])
         except:
-            price = data.iloc[-1] if len(df) == 1 else 0 # Fallback
+            price = 0.0
         current_prices.append(price)
     
     df["Current_Price"] = current_prices
     df["Market_Value"] = df["Shares"] * df["Current_Price"]
-    df["Total_Gain"] = df["Market_Value"] - (df["Shares"] * df["Cost_Basis"])
-    df["Gain_Pct"] = (df["Total_Gain"] / (df["Shares"] * df["Cost_Basis"])) * 100
+    df["Unrealized_Gain"] = df["Market_Value"] - (df["Shares"] * df["Cost_Basis"])
+    df["Gain_Pct"] = (df["Unrealized_Gain"] / (df["Shares"] * df["Cost_Basis"])) * 100
     
     return df
 
 try:
-    df = load_data()
+    df = load_holdings()
 
-    # 4. Display Key Metrics
-    total_value = df["Market_Value"].sum()
-    total_profit = df["Total_Gain"].sum()
-    
+    # 5. Calculate Totals
+    if not df.empty:
+        total_market_value = df["Market_Value"].sum()
+        unrealized_profit = df["Unrealized_Gain"].sum()
+        total_invested_capital = (df["Shares"] * df["Cost_Basis"]).sum()
+    else:
+        total_market_value = 0
+        unrealized_profit = 0
+        total_invested_capital = 0
+
+    # The Logic: (Paper Gains + Real Cash + Dividends) - (Costs)
+    gross_profit = unrealized_profit + realized_profit + total_dividends
+    net_lifetime_profit = gross_profit - total_expenses
+
+    # 6. Display Metrics
+    # Top Row: The Big Picture
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total Portfolio Value", f"${total_value:,.2f}")
-    col2.metric("Total Profit/Loss", f"${total_profit:,.2f}", delta=f"{total_profit:,.2f}")
+    col1.metric("Net Lifetime Profit", f"${net_lifetime_profit:,.0f}", 
+                delta=f"{net_lifetime_profit:,.0f}", 
+                help="Total Gains - Total Expenses")
     
-    # 5. Display Dataframe with formatting
-    st.subheader("Holdings")
+    col2.metric("Total Expenses (Fees/Interest)", f"-${total_expenses:,.0f}", 
+                delta_color="inverse")
     
-    # Format the dataframe for display
-    display_df = df.copy()
-    display_df["Current_Price"] = display_df["Current_Price"].map("${:,.2f}".format)
-    display_df["Market_Value"] = display_df["Market_Value"].map("${:,.2f}".format)
-    display_df["Total_Gain"] = display_df["Total_Gain"].map("${:,.2f}".format)
-    display_df["Gain_Pct"] = display_df["Gain_Pct"].map("{:,.2f}%".format)
-    
-    st.dataframe(display_df, use_container_width=True)
+    col3.metric("Portfolio Market Value", f"${total_market_value:,.0f}")
 
-    # 6. Simple Chart
-    st.subheader("Portfolio Allocation")
-    st.bar_chart(df.set_index("Ticker")["Market_Value"])
+    # Second Row: Breakdown
+    st.markdown("---")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Unrealized (Open)", f"${unrealized_profit:,.0f}", delta=f"{unrealized_profit:,.0f}")
+    c2.metric("Realized Sales", f"${realized_profit:,.0f}")
+    c3.metric("Dividends Collected", f"${total_dividends:,.0f}")
+    c4.metric("Current Invested Capital", f"${total_invested_capital:,.0f}")
+
+    # 7. Holdings Table
+    if not df.empty:
+        st.subheader("Current Holdings")
+        display_df = df.copy()
+        # Format columns
+        display_df["Current_Price"] = display_df["Current_Price"].map("${:,.1f}".format)
+        display_df["Market_Value"] = display_df["Market_Value"].map("${:,.0f}".format)
+        display_df["Unrealized_Gain"] = display_df["Unrealized_Gain"].map("${:,.0f}".format)
+        display_df["Gain_Pct"] = display_df["Gain_Pct"].map("{:,.2f}%".format)
+        st.dataframe(display_df[["Ticker", "Shares", "Current_Price", "Market_Value", "Unrealized_Gain", "Gain_Pct"]], use_container_width=True)
+
+    # 8. Expenses Log (Collapsible)
+    with st.expander("🔻 View Expenses Log (Interest & Fees)"):
+        if expenses_data:
+            st.dataframe(pd.DataFrame(expenses_data))
+        else:
+            st.info("No expenses recorded yet.")
 
 except Exception as e:
-    st.error(f"Error fetching data: {e}")
+    st.error(f"Something went wrong: {e}")
