@@ -77,30 +77,35 @@ try:
 
     st.markdown("---")
     
-# --- ROW 1: CURRENT POSITION (Live) ---
-    st.caption("🟢 CURRENT POSITION")
+# --- ROW 1: CURRENT POSITION (Live Risk) ---
+    st.caption("🟢 CURRENT POSITION (Paper)")
     r1c1, r1c2, r1c3 = st.columns(3)
     
-    # Stock Value + Cash + Unrealized
-    r1c1.metric("Stock Market Value", f"${stock_value:,.0f}")
-    r1c2.metric("Cash on Hand", f"${total_cash:,.0f}")
-    r1c3.metric("Unrealized Gains", f"${unrealized_profit:,.0f}", 
+    # 1. Performance First
+    r1c1.metric("Unrealized Gains", f"${unrealized_profit:,.0f}", 
                 delta=f"{unrealized_profit:,.0f}")
+    
+    # 2. Position Size
+    r1c2.metric("Stock Market Value", f"${stock_value:,.0f}")
+    r1c3.metric("Cash on Hand", f"${total_cash:,.0f}")
     
     st.markdown("---")
 
     # --- ROW 2: BANKED INCOME (Safe) ---
-    st.caption("💰 BANKED INCOME")
+    st.caption("💰 BANKED INCOME (Locked In)")
     r2c1, r2c2, r2c3 = st.columns(3)
     
-    # Realized + Dividends
-    r2c1.metric("Realized Sales", f"${realized_profit:,.0f}")
-    r2c2.metric("Dividends Received", f"${total_dividends:,.0f}")
+    # Calculate Total Banked & ROI
+    total_banked = realized_profit + total_dividends
+    total_roi = (net_lifetime_profit / 2500000) * 100
     
-    # Useful extra metric: "Total ROI" (Net Profit / Invested Capital)
-    # This gives you a % score for your whole strategy
-    total_roi = (net_lifetime_profit / (2500000)) * 100 if 2500000 > 0 else 0
-    r2c3.metric("Total Strategy ROI", f"{total_roi:,.2f}%", help="Based on 2.5M Initial Loan")
+    # 1. The Big Combo Metric
+    r2c1.metric("Total Banked Profit", f"${total_banked:,.0f}",
+                delta=f"ROI: {total_roi:,.2f}%")
+    
+    # 2. The Breakdown
+    r2c2.metric("Realized Sales", f"${realized_profit:,.0f}")
+    r2c3.metric("Dividends Received", f"${total_dividends:,.0f}")
     
     if not df.empty:
         st.subheader("Current Holdings")
@@ -114,6 +119,7 @@ try:
 
 except Exception as e:
     st.error(f"Error: {e}")
+
 
 
 
