@@ -77,20 +77,30 @@ try:
 
     st.markdown("---")
     
-# Breakdown Row: Assets on Left, Performance on Right
-    c1, c2, c3, c4, c5 = st.columns(5)
+# --- ROW 1: CURRENT POSITION (Live) ---
+    st.caption("🟢 CURRENT POSITION")
+    r1c1, r1c2, r1c3 = st.columns(3)
     
-    # 1. Current Assets (The "What I Have")
-    c1.metric("Stock Value", f"${stock_value:,.0f}")
-    c2.metric("Cash on Hand", f"${total_cash:,.0f}")
+    # Stock Value + Cash + Unrealized
+    r1c1.metric("Stock Market Value", f"${stock_value:,.0f}")
+    r1c2.metric("Cash on Hand", f"${total_cash:,.0f}")
+    r1c3.metric("Unrealized Gains", f"${unrealized_profit:,.0f}", 
+                delta=f"{unrealized_profit:,.0f}")
     
-    # 2. Performance (The "How It's Doing")
-    c3.metric("Unrealized Gains", f"${unrealized_profit:,.0f}", 
-              delta=f"{unrealized_profit:,.0f}")
+    st.markdown("---")
+
+    # --- ROW 2: BANKED INCOME (Safe) ---
+    st.caption("💰 BANKED INCOME")
+    r2c1, r2c2, r2c3 = st.columns(3)
     
-    # 3. Banked Income (The "Already in Pocket")
-    c4.metric("Realized Sales", f"${realized_profit:,.0f}")
-    c5.metric("Dividends", f"${total_dividends:,.0f}")
+    # Realized + Dividends
+    r2c1.metric("Realized Sales", f"${realized_profit:,.0f}")
+    r2c2.metric("Dividends Received", f"${total_dividends:,.0f}")
+    
+    # Useful extra metric: "Total ROI" (Net Profit / Invested Capital)
+    # This gives you a % score for your whole strategy
+    total_roi = (net_lifetime_profit / (2500000)) * 100 if 2500000 > 0 else 0
+    r2c3.metric("Total Strategy ROI", f"{total_roi:,.2f}%", help="Based on 2.5M Initial Loan")
     
     if not df.empty:
         st.subheader("Current Holdings")
@@ -104,6 +114,7 @@ try:
 
 except Exception as e:
     st.error(f"Error: {e}")
+
 
 
 
