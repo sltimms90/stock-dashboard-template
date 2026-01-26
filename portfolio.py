@@ -151,4 +151,89 @@ try:
 
     # 2. SUMMARY METRICS
     c1, c2, c3 = st.columns(3)
-    c1.metric("Investment P&L (Gross)", f"NT$
+    c1.metric("Investment P&L (Gross)", f"NT$ {gross_investment_pnl:,.0f}", delta="Pre-Fee Performance")
+    c2.metric("Total Fees & Interest", f"-NT$ {total_expenses:,.0f}", delta="Expenses", delta_color="inverse")
+    c3.metric("Cumulative Net P&L", f"NT$ {net_lifetime_pnl:,.0f}", delta="Net After Fees")
+
+    # 3. CURRENT POSITION
+    st.markdown("### 🟢 Current Position")
+    
+    # Allocation Chart
+    alloc_df = pd.DataFrame({
+        'Category': ['Bonds', 'Equities', 'Cash'],
+        'Value': [bond_val, equity_val, cash_val]
+    })
+    
+    st.caption(f"📊 **Allocation:** Bonds: {bond_pct:.1%} | Equities: {equity_pct:.1%} | Cash: {cash_pct:.1%}")
+    
+    chart = alt.Chart(alloc_df).mark_bar(size=35).encode(
+        x=alt.X('Value', axis=None, stack='normalize'),
+        color=alt.Color('Category', scale=alt.Scale(domain=['Bonds', 'Equities', 'Cash'], range=['#1f77b4', '#2ca02c', '#7f7f7f']), legend=None),
+        tooltip=['Category', alt.Tooltip('Value', format=',.0f')]
+    ).properties(height=40)
+    st.altair_chart(chart, use_container_width=True)
+    
+    # Metrics
+    col_a, col_b, col_c = st.columns(3)
+    curr_return_pct = (unrealized_profit / total_cost_basis * 100) if total_cost_basis else 0
+    
+    col_a.metric("Unrealized Gains", f"NT$ {unrealized_profit:,.0f}", delta=f"{curr_return_pct:.2f}% Return")
+    col_b.metric("Stock Market Value", f"NT$ {stock_value:,.0f}")
+    col_c.metric("Portfolio Age", "Since Jan 2026", delta=f"{inception_return_pct:.2f}% Inception Rtn")
+
+    # 4. HOLDINGS TABLE (With Formatted Columns)
+    if not df.empty:
+        # Prepare Data
+        df["Weight"] = (df["Market_Value"] / stock_value)
+        
+        # Sort
+        df_sorted = df.sort_values(by="Market_Value", ascending=False).copy()
+        
+        # Select Columns for Display (Keep numbers numeric for sorting!)
+        display_df = df_sorted[["Name", "Ticker", "Current_Price", "Shares", "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"]]
+
+        # Add Total Row
+        total_row = pd.DataFrame([{
+            "Name": "TOTALS", 
+            "Ticker": "", 
+            "Current_Price": None, 
+            "Shares": None, 
+            "Market_Value": stock_value, 
+            "Weight": 1.0, 
+            "Unrealized_Gain": unrealized_profit, 
+            "Gain_Pct": (unrealized_profit/total_cost_basis) if total_cost_basis else 0
+        }])
+        
+        final_table = pd.concat([display_df, total_row], ignore_index=True)
+
+        # Configure Column Formats
+        st.dataframe(
+            final_table,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Name": "Company",
+                "Current_Price": st.column_config.NumberColumn("Price", format="NT$ %.1f"),
+                "Market_Value": st.column_config.NumberColumn("Market Value", format="NT$ %.0f"),
+                "Unrealized_Gain": st.column_config.NumberColumn("Unrealized", format="NT$ %.0f"),
+                "Weight": st.column_config.ProgressColumn("Weight", format="%.1f%%", min_value=0, max_value=1),
+                "Gain_Pct": st.column_config.NumberColumn("Return", format="%.2f%%"),
+                "Shares": st.column_config.NumberColumn("Shares", format="%.0f"),
+            }
+        )
+
+    st.markdown("---")
+
+    # 5. BANKED PROFITS
+    st.markdown("### 🔒 Realized & Banked")
+    rc1, rc2, rc3 = st.columns(3)
+    total_banked = realized_profit + total_dividends
+    
+    rc1.metric("Total Banked Cash", f"NT$ {total_banked:,.0f}")
+    rc2.metric("Realized Sales", f"NT$ {realized_profit:,.0f}")
+    rc3.metric("Dividends Received", f"NT$ {total_dividends:,.0f}")
+
+    st.caption("Values in NTD. Real-time data via TWSE (twstock) with Yahoo Finance fallback.")
+
+except Exception as e:
+    st.error(f"Error loading dashboard: {e}")
