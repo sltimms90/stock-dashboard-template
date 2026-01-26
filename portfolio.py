@@ -81,7 +81,7 @@ NAME_MAP = {
     "2330.TW": "TSMC (Taiwan Semi)",
     "2382.TW": "Quanta Computer",
     "00725B.TWO": "Cathay Inv. Grade Bond",
-    "00725B.TW": "Cathay Inv. Grade Bond" # Fallback if ticker format changes
+    "00725B.TW": "Cathay Inv. Grade Bond"
 }
 
 # --- LOAD DATA ---
@@ -129,9 +129,9 @@ try:
     gross_investment_pnl = unrealized_profit + realized_profit + total_dividends
     net_lifetime_pnl = gross_investment_pnl - total_expenses
     
-    # Inception Return (Gross Profit / Total Capital Employed)
-    # Using Cost Basis + Cash as proxy for "Total Capital"
-    inception_return_pct = (gross_investment_pnl / (total_cost_basis + total_cash) * 100) if (total_cost_basis + total_cash) else 0
+    # Inception Return
+    invested_capital = total_cost_basis + total_cash
+    inception_return_pct = (gross_investment_pnl / invested_capital * 100) if invested_capital else 0
 
     # Allocation
     bond_val = df[df["Ticker"].str.contains("00725")]["Market_Value"].sum() if not df.empty else 0
@@ -151,9 +151,25 @@ try:
 
     # 2. SUMMARY METRICS
     c1, c2, c3 = st.columns(3)
-    c1.metric("Investment P&L (Gross)", f"NT$ {gross_investment_pnl:,.0f}", delta="Pre-Fee Performance")
-    c2.metric("Total Fees & Interest", f"-NT$ {total_expenses:,.0f}", delta="Expenses", delta_color="inverse")
-    c3.metric("Cumulative Net P&L", f"NT$ {net_lifetime_pnl:,.0f}", delta="Net After Fees")
+    
+    c1.metric(
+        label="Investment P&L (Gross)",
+        value=f"NT$ {gross_investment_pnl:,.0f}",
+        delta="Pre-Fee Performance"
+    )
+    
+    c2.metric(
+        label="Total Fees & Interest",
+        value=f"-NT$ {total_expenses:,.0f}",
+        delta="Expenses",
+        delta_color="inverse"
+    )
+    
+    c3.metric(
+        label="Cumulative Net P&L",
+        value=f"NT$ {net_lifetime_pnl:,.0f}",
+        delta="Net After Fees"
+    )
 
     # 3. CURRENT POSITION
     st.markdown("### 🟢 Current Position")
@@ -168,20 +184,35 @@ try:
     
     chart = alt.Chart(alloc_df).mark_bar(size=35).encode(
         x=alt.X('Value', axis=None, stack='normalize'),
-        color=alt.Color('Category', scale=alt.Scale(domain=['Bonds', 'Equities', 'Cash'], range=['#1f77b4', '#2ca02c', '#7f7f7f']), legend=None),
+        color=alt.Color('Category', scale=alt.Scale(
+            domain=['Bonds', 'Equities', 'Cash'],
+            range=['#1f77b4', '#2ca02c', '#7f7f7f']
+        ), legend=None),
         tooltip=['Category', alt.Tooltip('Value', format=',.0f')]
     ).properties(height=40)
+    
     st.altair_chart(chart, use_container_width=True)
     
     # Metrics
     col_a, col_b, col_c = st.columns(3)
     curr_return_pct = (unrealized_profit / total_cost_basis * 100) if total_cost_basis else 0
     
-    col_a.metric("Unrealized Gains", f"NT$ {unrealized_profit:,.0f}", delta=f"{curr_return_pct:.2f}% Return")
-    col_b.metric("Stock Market Value", f"NT$ {stock_value:,.0f}")
-    col_c.metric("Portfolio Age", "Since Jan 2026", delta=f"{inception_return_pct:.2f}% Inception Rtn")
+    col_a.metric(
+        label="Unrealized Gains",
+        value=f"NT$ {unrealized_profit:,.0f}",
+        delta=f"{curr_return_pct:.2f}% Return"
+    )
+    col_b.metric(
+        label="Stock Market Value",
+        value=f"NT$ {stock_value:,.0f}"
+    )
+    col_c.metric(
+        label="Portfolio Age",
+        value="Since Jan 2026",
+        delta=f"{inception_return_pct:.2f}% Inception Rtn"
+    )
 
-    # 4. HOLDINGS TABLE (With Formatted Columns)
+    # 4. HOLDINGS TABLE
     if not df.empty:
         # Prepare Data
         df["Weight"] = (df["Market_Value"] / stock_value)
@@ -189,8 +220,11 @@ try:
         # Sort
         df_sorted = df.sort_values(by="Market_Value", ascending=False).copy()
         
-        # Select Columns for Display (Keep numbers numeric for sorting!)
-        display_df = df_sorted[["Name", "Ticker", "Current_Price", "Shares", "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"]]
+        # Select Columns
+        display_df = df_sorted[[
+            "Name", "Ticker", "Current_Price", "Shares", 
+            "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"
+        ]]
 
         # Add Total Row
         total_row = pd.DataFrame([{
@@ -213,12 +247,24 @@ try:
             hide_index=True,
             column_config={
                 "Name": "Company",
-                "Current_Price": st.column_config.NumberColumn("Price", format="NT$ %.1f"),
-                "Market_Value": st.column_config.NumberColumn("Market Value", format="NT$ %.0f"),
-                "Unrealized_Gain": st.column_config.NumberColumn("Unrealized", format="NT$ %.0f"),
-                "Weight": st.column_config.ProgressColumn("Weight", format="%.1f%%", min_value=0, max_value=1),
-                "Gain_Pct": st.column_config.NumberColumn("Return", format="%.2f%%"),
-                "Shares": st.column_config.NumberColumn("Shares", format="%.0f"),
+                "Current_Price": st.column_config.NumberColumn(
+                    "Price", format="NT$ %.1f"
+                ),
+                "Market_Value": st.column_config.NumberColumn(
+                    "Market Value", format="NT$ %.0f"
+                ),
+                "Unrealized_Gain": st.column_config.NumberColumn(
+                    "Unrealized", format="NT$ %.0f"
+                ),
+                "Weight": st.column_config.ProgressColumn(
+                    "Weight", format="%.1f%%", min_value=0, max_value=1
+                ),
+                "Gain_Pct": st.column_config.NumberColumn(
+                    "Return", format="%.2f%%"
+                ),
+                "Shares": st.column_config.NumberColumn(
+                    "Shares", format="%.0f"
+                ),
             }
         )
 
@@ -229,9 +275,18 @@ try:
     rc1, rc2, rc3 = st.columns(3)
     total_banked = realized_profit + total_dividends
     
-    rc1.metric("Total Banked Cash", f"NT$ {total_banked:,.0f}")
-    rc2.metric("Realized Sales", f"NT$ {realized_profit:,.0f}")
-    rc3.metric("Dividends Received", f"NT$ {total_dividends:,.0f}")
+    rc1.metric(
+        label="Total Banked Cash",
+        value=f"NT$ {total_banked:,.0f}"
+    )
+    rc2.metric(
+        label="Realized Sales",
+        value=f"NT$ {realized_profit:,.0f}"
+    )
+    rc3.metric(
+        label="Dividends Received",
+        value=f"NT$ {total_dividends:,.0f}"
+    )
 
     st.caption("Values in NTD. Real-time data via TWSE (twstock) with Yahoo Finance fallback.")
 
