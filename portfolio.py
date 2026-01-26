@@ -2,11 +2,12 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import altair as alt
+import twstock  # NEW LIBRARY
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="My Portfolio", layout="wide")
 
-# Custom CSS for the "Hero" number and table alignment
+# Custom CSS
 st.markdown("""
     <style>
     .hero-metric {
@@ -22,7 +23,6 @@ st.markdown("""
         color: #555;
         margin-top: 20px;
     }
-    /* Make the metrics look like cards */
     div[data-testid="stMetric"] {
         background-color: #f9f9f9;
         padding: 15px;
@@ -48,8 +48,39 @@ if "app_password" in st.secrets:
                     st.error("Incorrect Password")
         st.stop()
 
+# --- HELPER: HYBRID PRICE FETCHER ---
+def get_realtime_price(ticker_yf):
+    """
+    Tries to get real-time price from twstock (Taiwan SE).
+    Falls back to yfinance if that fails.
+    """
+    # 1. CLEAN TICKER: Yahoo uses '2330.TW', twstock wants '2330'
+    ticker_clean = ticker_yf.split('.')[0]
+    
+    # 2. TRY TWSTOCK (Real-time)
+    try:
+        # Check if it's a valid Taiwan stock code (digits only)
+        if ticker_clean.isdigit():
+            stock = twstock.realtime.get(ticker_clean)
+            if stock['success']:
+                # twstock returns specific dict structure
+                price = stock['realtime'].get('latest_trade_price')
+                # Sometimes it returns '-' if no trade happened yet
+                if price and price != '-' and float(price) > 0:
+                    return float(price)
+    except Exception:
+        pass # Silently fail and move to fallback
+
+    # 3. FALLBACK TO YAHOO (15-min delay)
+    try:
+        data = yf.Ticker(ticker_yf).history(period="1d")
+        if not data.empty:
+            return float(data['Close'].iloc[-1])
+    except:
+        return 0.0
+    return 0.0
+
 # --- DATA MAPPING ---
-# Corrected Name Map (Grok was right!)
 NAME_MAP = {
     "2330.TW": "TSMC (Taiwan Semi)",
     "2382.TW": "Quanta Computer",
@@ -65,28 +96,20 @@ expenses_data = st.secrets.get("expenses", [])
 cash_data = st.secrets.get("cash", [])
 
 # --- CALCULATIONS ---
-# 1. Banked & Expenses
 realized_profit = sum([item["Profit"] for item in sales_data]) if sales_data else 0
 total_dividends = sum([item["Amount"] for item in dividends_data]) if dividends_data else 0
 total_expenses = sum([item["Amount"] for item in expenses_data]) if expenses_data else 0
 total_cash = sum([item["Amount"] for item in cash_data]) if cash_data else 0
 
-# 2. Live Holdings
+# 2. Live Holdings with Hybrid Fetcher
 def load_holdings():
     if not holdings_data: return pd.DataFrame()
     df = pd.DataFrame(holdings_data)
-    tickers = " ".join(df["Ticker"].tolist())
     
-    # Fetch Data via yfinance
-    if len(df) > 0:
-        data = yf.download(tickers, period="1d")['Close']
-    
+    # Loop through each ticker and get the best available price
     current_prices = []
     for ticker in df["Ticker"]:
-        try:
-            if len(df) == 1: price = float(data.iloc[-1])
-            else: price = float(data[ticker].iloc[-1])
-        except: price = 0.0
+        price = get_realtime_price(ticker)
         current_prices.append(price)
     
     df["Current_Price"] = current_prices
@@ -94,8 +117,6 @@ def load_holdings():
     df["Cost_Value"] = df["Shares"] * df["Cost_Basis"]
     df["Unrealized_Gain"] = df["Market_Value"] - df["Cost_Value"]
     df["Gain_Pct"] = (df["Unrealized_Gain"] / df["Cost_Value"]) * 100
-    
-    # Add Name Mapping
     df["Name"] = df["Ticker"].map(NAME_MAP).fillna(df["Ticker"])
     
     return df
@@ -118,124 +139,70 @@ try:
     equity_val = stock_value - bond_val
     cash_val = total_cash
     
-    # --- LAYOUT START ---
-
-    # SECTION 1: HERO HEADER (Total Assets)
+    # --- LAYOUT ---
+    
+    # HERO
     st.markdown(f'<div class="hero-label">TOTAL ASSETS (Stocks + Cash)</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="hero-metric">NT$ {total_assets:,.0f}</div>', unsafe_allow_html=True)
     st.markdown("---")
 
-    # SECTION 2: HIGH LEVEL SUMMARY
+    # SUMMARY
     c1, c2, c3 = st.columns(3)
-    
-    c1.metric(
-        "Investment P&L (Gross)", 
-        f"NT$ {gross_investment_pnl:,.0f}",
-        delta="Pre-Fee Performance",
-        help="Realized + Unrealized + Dividends (Before Expenses)"
-    )
-    
-    c2.metric(
-        "Total Fees & Interest", 
-        f"- NT$ {total_expenses:,.0f}",
-        delta="Expenses",
-        delta_color="inverse"
-    )
-    
-    c3.metric(
-        "Cumulative Net P&L", 
-        f"NT$ {net_lifetime_pnl:,.0f}",
-        delta="Net After Fees",
-        help="This is your final profit after paying the bank."
-    )
+    c1.metric("Investment P&L (Gross)", f"NT$ {gross_investment_pnl:,.0f}", delta="Pre-Fee Performance")
+    c2.metric("Total Fees & Interest", f"- NT$ {total_expenses:,.0f}", delta="Expenses", delta_color="inverse")
+    c3.metric("Cumulative Net P&L", f"NT$ {net_lifetime_pnl:,.0f}", delta="Net After Fees")
 
-    # SECTION 3: CURRENT POSITION & ALLOCATION
+    # CURRENT POSITION
     st.markdown("### 🟢 Current Position")
     
-    # Allocation Chart (Colorful!)
+    # Chart
     alloc_df = pd.DataFrame({
         'Category': ['Bonds', 'Equities', 'Cash'],
-        'Value': [bond_val, equity_val, cash_val],
-        'Color': ['#1f77b4', '#2ca02c', '#7f7f7f'] # Blue, Green, Gray
+        'Value': [bond_val, equity_val, cash_val]
     })
-    # Calculate percentages for label
-    alloc_df['Percentage'] = alloc_df['Value'] / total_assets
-    
-    # Create horizontal stacked bar
     chart = alt.Chart(alloc_df).mark_bar(size=30).encode(
         x=alt.X('Value', axis=None, stack='normalize'),
         color=alt.Color('Category', scale=alt.Scale(domain=['Bonds', 'Equities', 'Cash'], range=['#4c78a8', '#59a14f', '#bab0ac']), legend=None),
-        tooltip=['Category', alt.Tooltip('Value', format=',.0f'), alt.Tooltip('Percentage', format='.1%')]
+        tooltip=['Category', alt.Tooltip('Value', format=',.0f')]
     ).properties(height=40)
-    
     st.caption("📊 Portfolio Allocation")
     st.altair_chart(chart, use_container_width=True)
     
-    # Metric Row
+    # Metrics
     col_a, col_b, col_c = st.columns(3)
     curr_return_pct = (unrealized_profit / total_cost_basis * 100) if total_cost_basis else 0
-    
     col_a.metric("Unrealized Gains", f"NT$ {unrealized_profit:,.0f}", delta=f"{curr_return_pct:.2f}% Return")
     col_b.metric("Stock Market Value", f"NT$ {stock_value:,.0f}")
     col_c.metric("Portfolio Age", "Since Jan 2026")
 
-    # Holdings Table with TOTALS
+    # Table
     if not df.empty:
-        # Calculate Weight
         df["Weight"] = (df["Market_Value"] / stock_value) * 100
-        
-        # Sort by Market Value
         df_sorted = df.sort_values(by="Market_Value", ascending=False).copy()
         
-        # Prepare Display Data
         display_df = pd.DataFrame()
         display_df["Company"] = df_sorted["Name"]
         display_df["Ticker"] = df_sorted["Ticker"]
         display_df["Price"] = df_sorted["Current_Price"].map("NT$ {:,.1f}".format)
         display_df["Shares"] = df_sorted["Shares"]
-        display_df["Market Value"] = df_sorted["Market_Value"]
+        display_df["Market Value"] = df_sorted["Market_Value"].map("NT$ {:,.0f}".format)
         display_df["Weight"] = df_sorted["Weight"].map("{:.1f}%".format)
-        display_df["Unrealized"] = df_sorted["Unrealized_Gain"]
+        display_df["Unrealized"] = df_sorted["Unrealized_Gain"].map("NT$ {:,.0f}".format)
         display_df["Return"] = df_sorted["Gain_Pct"].map("{:,.2f}%".format)
         
-        # ADD TOTAL ROW
-        total_row = pd.DataFrame({
-            "Company": ["TOTALS"],
-            "Ticker": [""],
-            "Price": [""],
-            "Shares": [""], # Summing shares of different stocks makes no sense
-            "Market Value": [stock_value],
-            "Weight": ["100%"],
-            "Unrealized": [unrealized_profit],
-            "Return": [f"{(unrealized_profit/total_cost_basis*100):.2f}%"]
-        })
-        
-        # Format the numbers for the main rows (converting to string)
-        # We do this *after* calculating totals so we can do math
-        display_df["Market Value"] = display_df["Market Value"].map("NT$ {:,.0f}".format)
-        display_df["Unrealized"] = display_df["Unrealized"].map("NT$ {:,.0f}".format)
-        
-        # Format the totals row
-        total_row["Market Value"] = total_row["Market Value"].map("NT$ {:,.0f}".format)
-        total_row["Unrealized"] = total_row["Unrealized"].map("NT$ {:,.0f}".format)
-
-        # Combine
+        # Total Row
+        total_row = pd.DataFrame({"Company": ["TOTALS"], "Market Value": [f"NT$ {stock_value:,.0f}"], "Unrealized": [f"NT$ {unrealized_profit:,.0f}"]})
         final_table = pd.concat([display_df, total_row], ignore_index=True)
-        
         st.dataframe(final_table, use_container_width=True, hide_index=True)
 
     st.markdown("---")
-
-    # SECTION 4: BANKED PROFITS
     st.markdown("### 🔒 Realized & Banked")
     rc1, rc2, rc3 = st.columns(3)
-    total_banked = realized_profit + total_dividends
-    
-    rc1.metric("Total Banked Cash", f"NT$ {total_banked:,.0f}", help="Cash actually received")
+    rc1.metric("Total Banked Cash", f"NT$ {(realized_profit + total_dividends):,.0f}")
     rc2.metric("Realized Sales", f"NT$ {realized_profit:,.0f}")
     rc3.metric("Dividends Received", f"NT$ {total_dividends:,.0f}")
 
-    st.caption("Values in NTD. Data delayed by 15 mins (Yahoo Finance).")
+    st.caption("Values in NTD. Real-time data via TWSE (twstock); fallback to Yahoo Finance.")
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
