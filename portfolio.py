@@ -49,28 +49,24 @@ if "app_password" in st.secrets:
                     st.error("Incorrect Password")
         st.stop()
 
-# --- HELPER: ROBUST REAL-TIME PRICE FETCHER (Grok's Logic) ---
+# --- HELPER: ROBUST REAL-TIME PRICE FETCHER ---
 def get_realtime_price(ticker_yf):
-    ticker_clean = ticker_yf.split('.')[0]  # e.g., '00725B' or '2330'
+    ticker_clean = ticker_yf.split('.')[0]
     
-    # print(f"Fetching for {ticker_yf}...")  # Uncomment for debugging logs
-    
-    # 1. Try TWSTOCK (real-time attempt)
+    # 1. Try TWSTOCK
     try:
         stock_data = twstock.realtime.get(ticker_clean)
-        
         if stock_data.get('success', False):
             realtime_info = stock_data.get('realtime', {})
             price_str = realtime_info.get('latest_trade_price', '-')
             
-            # Check if price is valid (not '-' which means no trade yet)
             if price_str != '-' and price_str.strip() and float(price_str) > 0:
                 return float(price_str)
             
     except Exception as e:
         print(f"twstock failed for {ticker_yf}: {e}")
     
-    # 2. Fallback to Yahoo (usually last close)
+    # 2. Fallback to Yahoo
     try:
         ticker_obj = yf.Ticker(ticker_yf)
         data = ticker_obj.history(period="1d", prepost=False)
@@ -115,10 +111,7 @@ def load_holdings():
     df["Market_Value"] = df["Shares"] * df["Current_Price"]
     df["Cost_Value"] = df["Shares"] * df["Cost_Basis"]
     df["Unrealized_Gain"] = df["Market_Value"] - df["Cost_Value"]
-    
-    # Calculate % Return (Multiply by 100 for display)
     df["Gain_Pct"] = (df["Unrealized_Gain"] / df["Cost_Value"]) * 100
-    
     df["Name"] = df["Ticker"].map(NAME_MAP).fillna(df["Ticker"])
     return df
 
@@ -150,7 +143,7 @@ try:
 
     # --- LAYOUT ---
     
-    # REFRESH BUTTON
+    # Refresh Button
     if st.button("🔄 Refresh Data"):
         st.rerun()
 
@@ -161,22 +154,9 @@ try:
 
     # 2. SUMMARY METRICS
     c1, c2, c3 = st.columns(3)
-    c1.metric(
-        label="Investment P&L (Gross)",
-        value=f"NT$ {gross_investment_pnl:,.0f}",
-        delta="Pre-Fee Performance"
-    )
-    c2.metric(
-        label="Total Fees & Interest",
-        value=f"-NT$ {total_expenses:,.0f}",
-        delta="Expenses",
-        delta_color="inverse"
-    )
-    c3.metric(
-        label="Cumulative Net P&L",
-        value=f"NT$ {net_lifetime_pnl:,.0f}",
-        delta="Net After Fees"
-    )
+    c1.metric("Investment P&L (Gross)", f"NT$ {gross_investment_pnl:,.0f}", delta="Pre-Fee Performance")
+    c2.metric("Total Fees & Interest", f"-NT$ {total_expenses:,.0f}", delta="Expenses", delta_color="inverse")
+    c3.metric("Cumulative Net P&L", f"NT$ {net_lifetime_pnl:,.0f}", delta="Net After Fees")
 
     # 3. CURRENT POSITION
     st.markdown("### 🟢 Current Position")
@@ -204,76 +184,43 @@ try:
     col_a, col_b, col_c = st.columns(3)
     curr_return_pct = (unrealized_profit / total_cost_basis * 100) if total_cost_basis else 0
     
-    col_a.metric(
-        label="Unrealized Gains",
-        value=f"NT$ {unrealized_profit:,.0f}",
-        delta=f"{curr_return_pct:.2f}% Return"
-    )
-    col_b.metric(
-        label="Stock Market Value",
-        value=f"NT$ {stock_value:,.0f}"
-    )
-    col_c.metric(
-        label="Portfolio Age",
-        value="Since Jan 2026",
-        delta=f"{inception_return_pct:.2f}% Inception Rtn",
-        help="Inception Return includes Realized Profits + Dividends + Unrealized Gains."
-    )
+    col_a.metric("Unrealized Gains", f"NT$ {unrealized_profit:,.0f}", delta=f"{curr_return_pct:.2f}% Return")
+    col_b.metric("Stock Market Value", f"NT$ {stock_value:,.0f}")
+    col_c.metric("Portfolio Age", "Since Jan 2026", delta=f"{inception_return_pct:.2f}% Inception Rtn",
+                 help="Inception Return includes Realized Profits + Dividends + Unrealized Gains.")
 
     # 4. HOLDINGS TABLE
     if not df.empty:
-        # Calculate Weight (0-100 scale)
         df["Weight"] = (df["Market_Value"] / stock_value) * 100
-        
-        # Sort
         df_sorted = df.sort_values(by="Market_Value", ascending=False).copy()
         
-        # Select Columns
         display_df = df_sorted[[
             "Name", "Ticker", "Current_Price", "Shares", 
             "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"
         ]]
 
-        # Add Total Row
         total_row = pd.DataFrame([{
-            "Name": "TOTALS", 
-            "Ticker": "", 
-            "Current_Price": None, 
-            "Shares": None, 
-            "Market_Value": stock_value, 
-            "Weight": 100.0, 
+            "Name": "TOTALS", "Ticker": "", "Current_Price": None, "Shares": None, 
+            "Market_Value": stock_value, "Weight": 100.0, 
             "Unrealized_Gain": unrealized_profit, 
             "Gain_Pct": (unrealized_profit/total_cost_basis * 100) if total_cost_basis else 0
         }])
         
         final_table = pd.concat([display_df, total_row], ignore_index=True)
 
-        # Configure Column Formats (NOW WITH 2 DECIMAL PLACES)
         st.dataframe(
             final_table,
-            use_container_width=True,
+            width="stretch",  # <--- THE FIX IS HERE
             hide_index=True,
             column_config={
                 "Name": "Company",
                 "Ticker": "Ticker",
-                "Current_Price": st.column_config.NumberColumn(
-                    "Price", format="NT$ %.2f"  # <--- UPDATED to 2 decimals
-                ),
-                "Market_Value": st.column_config.NumberColumn(
-                    "Market Value", format="NT$ %.0f"
-                ),
-                "Unrealized_Gain": st.column_config.NumberColumn(
-                    "Unrealized", format="NT$ %.0f"
-                ),
-                "Weight": st.column_config.ProgressColumn(
-                    "Weight", format="%.1f%%", min_value=0, max_value=100
-                ),
-                "Gain_Pct": st.column_config.NumberColumn(
-                    "Return", format="%.2f%%"
-                ),
-                "Shares": st.column_config.NumberColumn(
-                    "Shares", format="%.0f"
-                ),
+                "Current_Price": st.column_config.NumberColumn("Price", format="NT$ %.2f"),
+                "Market_Value": st.column_config.NumberColumn("Market Value", format="NT$ %.0f"),
+                "Unrealized_Gain": st.column_config.NumberColumn("Unrealized", format="NT$ %.0f"),
+                "Weight": st.column_config.ProgressColumn("Weight", format="%.1f%%", min_value=0, max_value=100),
+                "Gain_Pct": st.column_config.NumberColumn("Return", format="%.2f%%"),
+                "Shares": st.column_config.NumberColumn("Shares", format="%.0f"),
             }
         )
 
@@ -283,19 +230,9 @@ try:
     st.markdown("### 🔒 Realized & Banked")
     rc1, rc2, rc3 = st.columns(3)
     total_banked = realized_profit + total_dividends
-    
-    rc1.metric(
-        label="Total Banked Cash",
-        value=f"NT$ {total_banked:,.0f}"
-    )
-    rc2.metric(
-        label="Realized Sales",
-        value=f"NT$ {realized_profit:,.0f}"
-    )
-    rc3.metric(
-        label="Dividends Received",
-        value=f"NT$ {total_dividends:,.0f}"
-    )
+    rc1.metric("Total Banked Cash", f"NT$ {total_banked:,.0f}")
+    rc2.metric("Realized Sales", f"NT$ {realized_profit:,.0f}")
+    rc3.metric("Dividends Received", f"NT$ {total_dividends:,.0f}")
 
     st.caption("Values in NTD. Real-time data via TWSE (twstock) with Yahoo Finance fallback.")
 
