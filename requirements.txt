@@ -3,4 +3,5 @@ yfinance
 twstock
 lxml
 pandas
+extra-streamlit-components
 
