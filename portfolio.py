@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import altair as alt
 import twstock  # Requires: pip install twstock lxml
+from datetime import datetime
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="My Portfolio", layout="wide")
@@ -48,28 +49,36 @@ if "app_password" in st.secrets:
                     st.error("Incorrect Password")
         st.stop()
 
-# --- HELPER: HYBRID PRICE FETCHER ---
+# --- HELPER: ROBUST REAL-TIME PRICE FETCHER (Grok's Logic) ---
 def get_realtime_price(ticker_yf):
-    ticker_clean = ticker_yf.split('.')[0]
+    ticker_clean = ticker_yf.split('.')[0]  # e.g., '00725B' or '2330'
     
-    # 1. Try TWSTOCK
+    # print(f"Fetching for {ticker_yf}...")  # Uncomment for debugging logs
+    
+    # 1. Try TWSTOCK (real-time attempt)
     try:
-        if ticker_clean.isdigit():
-            stock = twstock.realtime.get(ticker_clean)
-            if stock['success']:
-                price = stock['realtime'].get('latest_trade_price')
-                if price and price != '-' and float(price) > 0:
-                    return float(price)
-    except Exception:
-        pass 
-
-    # 2. Fallback to YAHOO
+        stock_data = twstock.realtime.get(ticker_clean)
+        
+        if stock_data.get('success', False):
+            realtime_info = stock_data.get('realtime', {})
+            price_str = realtime_info.get('latest_trade_price', '-')
+            
+            # Check if price is valid (not '-' which means no trade yet)
+            if price_str != '-' and price_str.strip() and float(price_str) > 0:
+                return float(price_str)
+            
+    except Exception as e:
+        print(f"twstock failed for {ticker_yf}: {e}")
+    
+    # 2. Fallback to Yahoo (usually last close)
     try:
-        data = yf.Ticker(ticker_yf).history(period="1d")
+        ticker_obj = yf.Ticker(ticker_yf)
+        data = ticker_obj.history(period="1d", prepost=False)
         if not data.empty:
             return float(data['Close'].iloc[-1])
-    except:
-        return 0.0
+    except Exception as e:
+        print(f"Yahoo failed for {ticker_yf}: {e}")
+    
     return 0.0
 
 # --- DATA MAPPING ---
@@ -107,7 +116,7 @@ def load_holdings():
     df["Cost_Value"] = df["Shares"] * df["Cost_Basis"]
     df["Unrealized_Gain"] = df["Market_Value"] - df["Cost_Value"]
     
-    # Calculate % Return (Multiply by 100 for proper formatting later)
+    # Calculate % Return (Multiply by 100 for display)
     df["Gain_Pct"] = (df["Unrealized_Gain"] / df["Cost_Value"]) * 100
     
     df["Name"] = df["Ticker"].map(NAME_MAP).fillna(df["Ticker"])
@@ -141,7 +150,7 @@ try:
 
     # --- LAYOUT ---
     
-    # NEW: Refresh Button
+    # REFRESH BUTTON
     if st.button("🔄 Refresh Data"):
         st.rerun()
 
@@ -178,121 +187,4 @@ try:
         'Value': [bond_val, equity_val, cash_val]
     })
     
-    st.caption(f"📊 **Allocation:** Bonds: {bond_pct:.1%} | Equities: {equity_pct:.1%} | Cash: {cash_pct:.1%}")
-    
-    chart = alt.Chart(alloc_df).mark_bar(size=35).encode(
-        x=alt.X('Value', axis=None, stack='normalize'),
-        color=alt.Color('Category', scale=alt.Scale(
-            domain=['Bonds', 'Equities', 'Cash'],
-            range=['#1f77b4', '#2ca02c', '#7f7f7f']
-        ), legend=None),
-        tooltip=['Category', alt.Tooltip('Value', format=',.0f')]
-    ).properties(height=40)
-    
-    st.altair_chart(chart, use_container_width=True)
-    
-    # Metrics
-    col_a, col_b, col_c = st.columns(3)
-    curr_return_pct = (unrealized_profit / total_cost_basis * 100) if total_cost_basis else 0
-    
-    col_a.metric(
-        label="Unrealized Gains",
-        value=f"NT$ {unrealized_profit:,.0f}",
-        delta=f"{curr_return_pct:.2f}% Return"
-    )
-    col_b.metric(
-        label="Stock Market Value",
-        value=f"NT$ {stock_value:,.0f}"
-    )
-    col_c.metric(
-        label="Portfolio Age",
-        value="Since Jan 2026",
-        delta=f"{inception_return_pct:.2f}% Inception Rtn",
-        help="Inception Return includes Realized Profits + Dividends + Unrealized Gains. Current dip is mostly from Unrealized Bond prices."
-    )
-
-    # 4. HOLDINGS TABLE
-    if not df.empty:
-        # Calculate Weight (0-100 scale for Progress Bar)
-        df["Weight"] = (df["Market_Value"] / stock_value) * 100
-        
-        # Sort
-        df_sorted = df.sort_values(by="Market_Value", ascending=False).copy()
-        
-        # Select Columns
-        display_df = df_sorted[[
-            "Name", "Ticker", "Current_Price", "Shares", 
-            "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"
-        ]]
-
-        # Add Total Row (With clean formatting)
-        total_row = pd.DataFrame([{
-            "Name": "TOTALS", 
-            "Ticker": "",  # Empty string to avoid "None"
-            "Current_Price": None, 
-            "Shares": None, 
-            "Market_Value": stock_value, 
-            "Weight": 100.0, 
-            "Unrealized_Gain": unrealized_profit, 
-            "Gain_Pct": (unrealized_profit/total_cost_basis * 100) if total_cost_basis else 0
-        }])
-        
-        final_table = pd.concat([display_df, total_row], ignore_index=True)
-
-        # Configure Column Formats
-        st.dataframe(
-            final_table,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Name": "Company",
-                "Ticker": "Ticker",
-                "Current_Price": st.column_config.NumberColumn(
-                    "Price", format="NT$ %.2f"
-                ),
-                "Market_Value": st.column_config.NumberColumn(
-                    "Market Value", format="NT$ %.0f"
-                ),
-                "Unrealized_Gain": st.column_config.NumberColumn(
-                    "Unrealized", format="NT$ %.0f"
-                ),
-                "Weight": st.column_config.ProgressColumn(
-                    "Weight", format="%.1f%%", min_value=0, max_value=100
-                ),
-                "Gain_Pct": st.column_config.NumberColumn(
-                    "Return", format="%.2f%%"
-                ),
-                "Shares": st.column_config.NumberColumn(
-                    "Shares", format="%.0f"
-                ),
-            }
-        )
-
-    st.markdown("---")
-
-    # 5. BANKED PROFITS
-    st.markdown("### 🔒 Realized & Banked")
-    rc1, rc2, rc3 = st.columns(3)
-    total_banked = realized_profit + total_dividends
-    
-    rc1.metric(
-        label="Total Banked Cash",
-        value=f"NT$ {total_banked:,.0f}"
-    )
-    rc2.metric(
-        label="Realized Sales",
-        value=f"NT$ {realized_profit:,.0f}"
-    )
-    rc3.metric(
-        label="Dividends Received",
-        value=f"NT$ {total_dividends:,.0f}"
-    )
-
-    st.caption("Values in NTD. Real-time data via TWSE (twstock) with Yahoo Finance fallback.")
-
-except Exception as e:
-    st.error(f"Error loading dashboard: {e}")
-
-
-
-
+    st.caption(f"📊 **Allocation:** Bonds: {bond_pct:.1
