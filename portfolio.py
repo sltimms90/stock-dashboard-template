@@ -2,7 +2,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import altair as alt
-import twstock  # Requires: pip install twstock lxml
 from datetime import datetime
 
 # --- CONFIGURATION ---
@@ -49,31 +48,15 @@ if "app_password" in st.secrets:
                     st.error("Incorrect Password")
         st.stop()
 
-# --- HELPER: ROBUST REAL-TIME PRICE FETCHER ---
-def get_realtime_price(ticker_yf):
+# --- HELPER: PRICE FETCHER (Yahoo Only) ---
+def get_price(ticker_yf):
     """
-    Fetches price with detailed logging for debugging.
-    Priority: 1. twstock (Real-time), 2. Yahoo (Fallback)
+    Fetches price from Yahoo Finance.
+    Stable, reliable, but 15-min delayed.
     """
-    ticker_clean = ticker_yf.split('.')[0] 
-    
-    # 1. Try TWSTOCK
-    try:
-        stock_data = twstock.realtime.get(ticker_clean)
-        if stock_data.get('success', False):
-            realtime_info = stock_data.get('realtime', {})
-            price_str = realtime_info.get('latest_trade_price', '-')
-            
-            if price_str != '-' and price_str.strip() and float(price_str) > 0:
-                return float(price_str)
-            
-    except Exception as e:
-        print(f"[ERROR] twstock failed for {ticker_clean}: {e}")
-    
-    # 2. Fallback to Yahoo
     try:
         ticker_obj = yf.Ticker(ticker_yf)
-        data = ticker_obj.history(period="1d", prepost=False)
+        data = ticker_obj.history(period="1d")
         if not data.empty:
             return float(data['Close'].iloc[-1])
     except Exception as e:
@@ -108,7 +91,7 @@ def load_holdings():
     
     current_prices = []
     for ticker in df["Ticker"]:
-        price = get_realtime_price(ticker)
+        price = get_price(ticker)
         current_prices.append(price)
     
     df["Current_Price"] = current_prices
@@ -182,10 +165,7 @@ try:
         tooltip=['Category', alt.Tooltip('Value', format=',.0f')]
     ).properties(height=40)
     
-    # Note: Removed use_container_width=True to silence warnings; 
-    # Altair usually expands by default or via properties.
-    st.altair_chart(chart, use_container_width=True) 
-    # If the chart warning persists, change the above line to: st.altair_chart(chart)
+    st.altair_chart(chart, use_container_width=True)
     
     # Metrics
     col_a, col_b, col_c = st.columns(3)
@@ -206,8 +186,7 @@ try:
             "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"
         ]]
 
-        # FIX FOR DATAFRAME CONCAT WARNING:
-        # Use float('nan') instead of None for numeric columns
+        # TOTALS ROW (Use float('nan') to fix FutureWarning)
         total_row = pd.DataFrame([{
             "Name": "TOTALS", 
             "Ticker": "", 
@@ -219,11 +198,12 @@ try:
             "Gain_Pct": (unrealized_profit/total_cost_basis * 100) if total_cost_basis else 0
         }])
         
+        # Use pd.concat properly
         final_table = pd.concat([display_df, total_row], ignore_index=True)
 
         st.dataframe(
             final_table,
-            width="stretch",  # Ensure this is set to "stretch"
+            width="stretch",  # Use 'width' instead of 'use_container_width'
             hide_index=True,
             column_config={
                 "Name": "Company",
@@ -247,7 +227,7 @@ try:
     rc2.metric("Realized Sales", f"NT$ {realized_profit:,.0f}")
     rc3.metric("Dividends Received", f"NT$ {total_dividends:,.0f}")
 
-    st.caption("Values in NTD. Real-time data via TWSE (twstock) with Yahoo Finance fallback.")
+    st.caption("Values in NTD. Data delayed by 15 mins (Yahoo Finance).")
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
