@@ -33,7 +33,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- PASSWORD PROTECTION WITH COOKIES ---
+# --- PASSWORD PROTECTION WITH COOKIES (ROBUST) ---
 if "app_password" in st.secrets:
     password = st.secrets["app_password"]
     
@@ -41,11 +41,14 @@ if "app_password" in st.secrets:
     cookie_manager = stx.CookieManager()
     
     # 2. Check for existing cookie
-    # Note: On first load, this might return None briefly. 
     cookie_auth = cookie_manager.get(cookie="authenticated")
     
-    # 3. If no cookie, check session state
-    if not cookie_auth:
+    # 3. Logic: Logged in if Cookie exists OR Session State says so
+    if cookie_auth or st.session_state.get("authenticated", False):
+        # Sync session state if cookie was found
+        if "authenticated" not in st.session_state:
+            st.session_state["authenticated"] = True
+    else:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
             st.title("🔒 Portfolio Login")
@@ -53,16 +56,20 @@ if "app_password" in st.secrets:
             
             if st.button("Login"):
                 if entered_password == password:
-                    # A. Set Cookie (Expires in 30 days)
+                    # A. Set Session State (Immediate Access)
+                    # This fixes the "Nothing Happens" bug!
+                    st.session_state["authenticated"] = True
+                    
+                    # B. Set Cookie (Long-term Access)
                     expires = datetime.now() + timedelta(days=30)
                     cookie_manager.set("authenticated", "true", expires_at=expires)
                     
-                    # B. Force reload to apply cookie
+                    # C. Reload
                     st.rerun()
                 else:
                     st.error("Incorrect Password")
         st.stop()
-
+        
 # --- HELPER: PRICE FETCHER (Yahoo Only) ---
 def get_price(ticker_yf):
     """
@@ -246,4 +253,5 @@ try:
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
+
 
