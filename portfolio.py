@@ -141,6 +141,8 @@ try:
 
     # --- LAYOUT ---
 
+if st.button("🔄 Refresh Prices"):
+    st.rerun()
     # 1. HERO HEADER
     st.markdown(f'<div class="hero-label">TOTAL ASSETS (Stocks + Cash)</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="hero-metric">NT$ {total_assets:,.0f}</div>', unsafe_allow_html=True)
@@ -288,3 +290,4 @@ try:
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
+
