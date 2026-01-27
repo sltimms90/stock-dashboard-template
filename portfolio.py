@@ -140,9 +140,14 @@ try:
     cash_pct = (cash_val / total_assets) if total_assets else 0
 
     # --- LAYOUT ---
+    
+    # NEW: Refresh Button
+    if st.button("🔄 Refresh Data"):
+        st.rerun()
 
-if st.button("🔄 Refresh Prices"):
-    st.rerun()
+    # 1. HERO HEADER
+    st.markdown(f'<div class="hero-label">TOTAL ASSETS (Stocks + Cash)</div>', unsafe_allow_html=True)
+    # ... rest of code
     # 1. HERO HEADER
     st.markdown(f'<div class="hero-label">TOTAL ASSETS (Stocks + Cash)</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="hero-metric">NT$ {total_assets:,.0f}</div>', unsafe_allow_html=True)
@@ -290,4 +295,5 @@ if st.button("🔄 Refresh Prices"):
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
+
 
