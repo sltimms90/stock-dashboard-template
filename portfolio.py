@@ -55,7 +55,7 @@ def get_realtime_price(ticker_yf):
     Fetches price with detailed logging for debugging.
     Priority: 1. twstock (Real-time), 2. Yahoo (Fallback)
     """
-    ticker_clean = ticker_yf.split('.')[0] # Converts '00725B.TWO' -> '00725B'
+    ticker_clean = ticker_yf.split('.')[0] 
     
     # 1. Try TWSTOCK
     try:
@@ -64,30 +64,18 @@ def get_realtime_price(ticker_yf):
             realtime_info = stock_data.get('realtime', {})
             price_str = realtime_info.get('latest_trade_price', '-')
             
-            # Validation: Must be a number > 0
             if price_str != '-' and price_str.strip() and float(price_str) > 0:
-                price = float(price_str)
-                # print(f"[DEBUG] {ticker_clean}: Found via twstock -> ${price}")
-                return price
-            else:
-                # print(f"[DEBUG] {ticker_clean}: twstock returned empty/invalid price")
-                pass
-        else:
-             # print(f"[DEBUG] {ticker_clean}: twstock success=False")
-             pass
+                return float(price_str)
             
     except Exception as e:
         print(f"[ERROR] twstock failed for {ticker_clean}: {e}")
     
     # 2. Fallback to Yahoo
     try:
-        # print(f"[DEBUG] {ticker_clean}: Falling back to Yahoo...")
         ticker_obj = yf.Ticker(ticker_yf)
         data = ticker_obj.history(period="1d", prepost=False)
         if not data.empty:
-            price = float(data['Close'].iloc[-1])
-            # print(f"[DEBUG] {ticker_clean}: Found via Yahoo -> ${price}")
-            return price
+            return float(data['Close'].iloc[-1])
     except Exception as e:
         print(f"[ERROR] Yahoo failed for {ticker_yf}: {e}")
     
@@ -161,8 +149,6 @@ try:
     
     # Refresh Button
     if st.button("🔄 Refresh Data"):
-        # Clearing cache isn't needed since we didn't cache the price fetcher
-        # But st.rerun() ensures we re-execute the script from top to bottom
         st.rerun()
 
     # 1. HERO HEADER
@@ -196,7 +182,10 @@ try:
         tooltip=['Category', alt.Tooltip('Value', format=',.0f')]
     ).properties(height=40)
     
-    st.altair_chart(chart, use_container_width=True)
+    # Note: Removed use_container_width=True to silence warnings; 
+    # Altair usually expands by default or via properties.
+    st.altair_chart(chart, use_container_width=True) 
+    # If the chart warning persists, change the above line to: st.altair_chart(chart)
     
     # Metrics
     col_a, col_b, col_c = st.columns(3)
@@ -217,9 +206,15 @@ try:
             "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"
         ]]
 
+        # FIX FOR DATAFRAME CONCAT WARNING:
+        # Use float('nan') instead of None for numeric columns
         total_row = pd.DataFrame([{
-            "Name": "TOTALS", "Ticker": "", "Current_Price": None, "Shares": None, 
-            "Market_Value": stock_value, "Weight": 100.0, 
+            "Name": "TOTALS", 
+            "Ticker": "", 
+            "Current_Price": float('nan'), 
+            "Shares": float('nan'), 
+            "Market_Value": stock_value, 
+            "Weight": 100.0, 
             "Unrealized_Gain": unrealized_profit, 
             "Gain_Pct": (unrealized_profit/total_cost_basis * 100) if total_cost_basis else 0
         }])
@@ -228,7 +223,7 @@ try:
 
         st.dataframe(
             final_table,
-            width="stretch",  # Keeps your User-Preferred Setting
+            width="stretch",  # Ensure this is set to "stretch"
             hide_index=True,
             column_config={
                 "Name": "Company",
