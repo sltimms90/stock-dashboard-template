@@ -2,7 +2,8 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import altair as alt
-from datetime import datetime
+from datetime import datetime, timedelta
+import extra_streamlit_components as stx # Requires: pip install extra-streamlit-components
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="My Portfolio", layout="wide")
@@ -32,17 +33,31 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- PASSWORD PROTECTION ---
+# --- PASSWORD PROTECTION WITH COOKIES ---
 if "app_password" in st.secrets:
     password = st.secrets["app_password"]
-    if "authenticated" not in st.session_state:
+    
+    # 1. Setup Cookie Manager
+    cookie_manager = stx.CookieManager()
+    
+    # 2. Check for existing cookie
+    # Note: On first load, this might return None briefly. 
+    cookie_auth = cookie_manager.get(cookie="authenticated")
+    
+    # 3. If no cookie, check session state
+    if not cookie_auth:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
             st.title("🔒 Portfolio Login")
             entered_password = st.text_input("Enter Password", type="password")
+            
             if st.button("Login"):
                 if entered_password == password:
-                    st.session_state["authenticated"] = True
+                    # A. Set Cookie (Expires in 30 days)
+                    expires = datetime.now() + timedelta(days=30)
+                    cookie_manager.set("authenticated", "true", expires_at=expires)
+                    
+                    # B. Force reload to apply cookie
                     st.rerun()
                 else:
                     st.error("Incorrect Password")
@@ -231,3 +246,4 @@ try:
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
+
