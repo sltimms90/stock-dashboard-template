@@ -248,7 +248,7 @@ try:
                 "Name": "Company",
                 "Ticker": "Ticker",
                 "Current_Price": st.column_config.NumberColumn(
-                    "Price", format="NT$ %.1f"
+                    "Price", format="NT$ %.2f"
                 ),
                 "Market_Value": st.column_config.NumberColumn(
                     "Market Value", format="NT$ %.0f"
@@ -292,6 +292,7 @@ try:
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
+
 
 
 
