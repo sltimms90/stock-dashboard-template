@@ -51,7 +51,11 @@ if "app_password" in st.secrets:
 
 # --- HELPER: ROBUST REAL-TIME PRICE FETCHER ---
 def get_realtime_price(ticker_yf):
-    ticker_clean = ticker_yf.split('.')[0]
+    """
+    Fetches price with detailed logging for debugging.
+    Priority: 1. twstock (Real-time), 2. Yahoo (Fallback)
+    """
+    ticker_clean = ticker_yf.split('.')[0] # Converts '00725B.TWO' -> '00725B'
     
     # 1. Try TWSTOCK
     try:
@@ -60,20 +64,32 @@ def get_realtime_price(ticker_yf):
             realtime_info = stock_data.get('realtime', {})
             price_str = realtime_info.get('latest_trade_price', '-')
             
+            # Validation: Must be a number > 0
             if price_str != '-' and price_str.strip() and float(price_str) > 0:
-                return float(price_str)
+                price = float(price_str)
+                # print(f"[DEBUG] {ticker_clean}: Found via twstock -> ${price}")
+                return price
+            else:
+                # print(f"[DEBUG] {ticker_clean}: twstock returned empty/invalid price")
+                pass
+        else:
+             # print(f"[DEBUG] {ticker_clean}: twstock success=False")
+             pass
             
     except Exception as e:
-        print(f"twstock failed for {ticker_yf}: {e}")
+        print(f"[ERROR] twstock failed for {ticker_clean}: {e}")
     
     # 2. Fallback to Yahoo
     try:
+        # print(f"[DEBUG] {ticker_clean}: Falling back to Yahoo...")
         ticker_obj = yf.Ticker(ticker_yf)
         data = ticker_obj.history(period="1d", prepost=False)
         if not data.empty:
-            return float(data['Close'].iloc[-1])
+            price = float(data['Close'].iloc[-1])
+            # print(f"[DEBUG] {ticker_clean}: Found via Yahoo -> ${price}")
+            return price
     except Exception as e:
-        print(f"Yahoo failed for {ticker_yf}: {e}")
+        print(f"[ERROR] Yahoo failed for {ticker_yf}: {e}")
     
     return 0.0
 
@@ -145,6 +161,8 @@ try:
     
     # Refresh Button
     if st.button("🔄 Refresh Data"):
+        # Clearing cache isn't needed since we didn't cache the price fetcher
+        # But st.rerun() ensures we re-execute the script from top to bottom
         st.rerun()
 
     # 1. HERO HEADER
@@ -210,7 +228,7 @@ try:
 
         st.dataframe(
             final_table,
-            width="stretch",  # <--- THE FIX IS HERE
+            width="stretch",  # Keeps your User-Preferred Setting
             hide_index=True,
             column_config={
                 "Name": "Company",
