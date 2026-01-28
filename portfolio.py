@@ -2,8 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import altair as alt
-from datetime import datetime, timedelta
-import extra_streamlit_components as stx # Requires: pip install extra-streamlit-components
+from datetime import datetime
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="My Portfolio", layout="wide")
@@ -33,49 +32,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- PASSWORD PROTECTION WITH COOKIES (ROBUST) ---
+# --- PASSWORD PROTECTION ---
 if "app_password" in st.secrets:
     password = st.secrets["app_password"]
-    
-    # 1. Setup Cookie Manager
-    cookie_manager = stx.CookieManager()
-    
-    # 2. Check for existing cookie
-    cookie_auth = cookie_manager.get(cookie="authenticated")
-    
-    # 3. Logic: Logged in if Cookie exists OR Session State says so
-    if cookie_auth or st.session_state.get("authenticated", False):
-        # Sync session state if cookie was found
-        if "authenticated" not in st.session_state:
-            st.session_state["authenticated"] = True
-    else:
+    if "authenticated" not in st.session_state:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
             st.title("🔒 Portfolio Login")
             entered_password = st.text_input("Enter Password", type="password")
-            
             if st.button("Login"):
                 if entered_password == password:
-                    # A. Set Session State (Immediate Access)
-                    # This fixes the "Nothing Happens" bug!
                     st.session_state["authenticated"] = True
-                    
-                    # B. Set Cookie (Long-term Access)
-                    expires = datetime.now() + timedelta(days=30)
-                    cookie_manager.set("authenticated", "true", expires_at=expires)
-                    
-                    # C. Reload
                     st.rerun()
                 else:
                     st.error("Incorrect Password")
         st.stop()
-        
-# --- HELPER: PRICE FETCHER (Yahoo Only) ---
+
+# --- HELPER 1: ASSET PRICE FETCHER (Yahoo Only) ---
 def get_price(ticker_yf):
-    """
-    Fetches price from Yahoo Finance.
-    Stable, reliable, but 15-min delayed.
-    """
     try:
         ticker_obj = yf.Ticker(ticker_yf)
         data = ticker_obj.history(period="1d")
@@ -83,8 +57,27 @@ def get_price(ticker_yf):
             return float(data['Close'].iloc[-1])
     except Exception as e:
         print(f"[ERROR] Yahoo failed for {ticker_yf}: {e}")
-    
     return 0.0
+
+# --- HELPER 2: MARKET INDICATOR FETCHER ---
+def get_indicator(ticker_yf):
+    """
+    Fetches current value and daily change delta.
+    Returns: (current_value, delta_value) or (None, None) on fail.
+    """
+    try:
+        # Fetch 5 days to ensure we get 'yesterday' even after weekends/holidays
+        ticker = yf.Ticker(ticker_yf)
+        hist = ticker.history(period="5d")
+        
+        if len(hist) >= 2:
+            current = float(hist['Close'].iloc[-1])
+            prev = float(hist['Close'].iloc[-2])
+            delta = current - prev
+            return current, delta
+    except Exception as e:
+        print(f"[ERROR] Indicator failed for {ticker_yf}: {e}")
+    return None, None
 
 # --- DATA MAPPING ---
 NAME_MAP = {
@@ -152,7 +145,7 @@ try:
 
     # --- LAYOUT ---
     
-    # Refresh Button
+    # REFRESH BUTTON
     if st.button("🔄 Refresh Data"):
         st.rerun()
 
@@ -197,6 +190,64 @@ try:
     col_b.metric("Stock Market Value", f"NT$ {stock_value:,.0f}")
     col_c.metric("Portfolio Age", "Since Jan 2026", delta=f"{inception_return_pct:.2f}% Inception Rtn",
                  help="Inception Return includes Realized Profits + Dividends + Unrealized Gains.")
+    
+    st.markdown("---")
+
+    # --- NEW: BOND MARKET INDICATORS ---
+    st.markdown("### 📊 Bond Market Indicators")
+    st.caption("Key drivers for Cathay Inv. Grade Bond (00725B) | Data delayed ~15m via Yahoo")
+
+    # Fetch Indicators
+    # ^TNX = 10-Year Treasury Yield (Yahoo provides it as Index, e.g., 42.50 = 4.25%)
+    tnx_val, tnx_delta = get_indicator("^TNX")
+    # TWD=X = USD/TWD Exchange Rate
+    twd_val, twd_delta = get_indicator("TWD=X")
+    # ^VIX = Volatility Index
+    vix_val, vix_delta = get_indicator("^VIX")
+
+    b1, b2, b3 = st.columns(3)
+
+    # 1. US 10-Year Yield
+    if tnx_val is not None:
+        # Yahoo ^TNX is often index value (e.g., 42.5). Convert to % (4.25)
+        # Check logic: if val > 20, assume it needs /10. If < 10, assume it's already %.
+        final_yield = tnx_val / 10 if tnx_val > 10 else tnx_val
+        final_delta = tnx_delta / 10 if tnx_val > 10 else tnx_delta
+        
+        b1.metric(
+            label="US 10-Year Yield",
+            value=f"{final_yield:.2f}%",
+            delta=f"{final_delta:.2f} pts",
+            delta_color="inverse", # Rising yield = Bad for Bond Price
+            help="The benchmark risk-free rate. When this goes UP, bond prices generally go DOWN."
+        )
+    else:
+        b1.metric("US 10-Year Yield", "N/A")
+
+    # 2. USD/TWD Exchange Rate
+    if twd_val is not None:
+        b2.metric(
+            label="USD / TWD Rate",
+            value=f"{twd_val:.2f} TWD",
+            delta=f"{twd_delta:.2f}",
+            help="Current price of 1 USD in TWD. A stronger dollar (higher number) usually helps 00725B's value."
+        )
+    else:
+        b2.metric("USD / TWD Rate", "N/A")
+
+    # 3. VIX Index
+    if vix_val is not None:
+        b3.metric(
+            label="VIX (Fear Index)",
+            value=f"{vix_val:.2f}",
+            delta=f"{vix_delta:.2f}",
+            delta_color="inverse", # High VIX = High Risk/Panic
+            help="Global market volatility. High VIX often means investors are scared, which can affect credit spreads."
+        )
+    else:
+        b3.metric("VIX (Fear Index)", "N/A")
+
+    st.markdown("---")
 
     # 4. HOLDINGS TABLE
     if not df.empty:
@@ -208,7 +259,6 @@ try:
             "Market_Value", "Weight", "Unrealized_Gain", "Gain_Pct"
         ]]
 
-        # TOTALS ROW (Use float('nan') to fix FutureWarning)
         total_row = pd.DataFrame([{
             "Name": "TOTALS", 
             "Ticker": "", 
@@ -220,12 +270,11 @@ try:
             "Gain_Pct": (unrealized_profit/total_cost_basis * 100) if total_cost_basis else 0
         }])
         
-        # Use pd.concat properly
         final_table = pd.concat([display_df, total_row], ignore_index=True)
 
         st.dataframe(
             final_table,
-            width="stretch",  # Use 'width' instead of 'use_container_width'
+            width="stretch", 
             hide_index=True,
             column_config={
                 "Name": "Company",
@@ -253,5 +302,3 @@ try:
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
-
-
