@@ -61,15 +61,9 @@ def get_price(ticker_yf):
 
 # --- HELPER 2: MARKET INDICATOR FETCHER ---
 def get_indicator(ticker_yf):
-    """
-    Fetches current value and daily change delta.
-    Returns: (current_value, delta_value) or (None, None) on fail.
-    """
     try:
-        # Fetch 5 days to ensure we get 'yesterday' even after weekends/holidays
         ticker = yf.Ticker(ticker_yf)
         hist = ticker.history(period="5d")
-        
         if len(hist) >= 2:
             current = float(hist['Close'].iloc[-1])
             prev = float(hist['Close'].iloc[-2])
@@ -84,7 +78,8 @@ NAME_MAP = {
     "2330.TW": "TSMC (Taiwan Semi)",
     "2382.TW": "Quanta Computer",
     "00725B.TWO": "Cathay Inv. Grade Bond",
-    "00725B.TW": "Cathay Inv. Grade Bond"
+    "00725B.TW": "Cathay Inv. Grade Bond",
+    "0056.TW": "Yuanta High Dividend ETF"
 }
 
 # --- LOAD DATA ---
@@ -145,7 +140,6 @@ try:
 
     # --- LAYOUT ---
     
-    # REFRESH BUTTON
     if st.button("🔄 Refresh Data"):
         st.rerun()
 
@@ -183,12 +177,13 @@ try:
     st.altair_chart(chart, use_container_width=True)
     
     # Metrics
-    col_a, col_b, col_c = st.columns(3)
+    col_a, col_b, col_c, col_d = st.columns(4)
     curr_return_pct = (unrealized_profit / total_cost_basis * 100) if total_cost_basis else 0
     
     col_a.metric("Unrealized Gains", f"NT$ {unrealized_profit:,.0f}", delta=f"{curr_return_pct:.2f}% Return")
-    col_b.metric("Stock Market Value", f"NT$ {stock_value:,.0f}")
-    col_c.metric("Portfolio Age", "Since Jan 2026", delta=f"{inception_return_pct:.2f}% Inception Rtn",
+    col_b.metric("Stock Value", f"NT$ {stock_value:,.0f}")
+    col_c.metric("Cash Balance", f"NT$ {total_cash:,.0f}", help="Your Fubon Bank Account Balance")
+    col_d.metric("Portfolio Age", "Since Jan '26", delta=f"{inception_return_pct:.2f}% Inc. Rtn",
                  help="Inception Return includes Realized Profits + Dividends + Unrealized Gains.")
     
     st.markdown("---")
@@ -197,20 +192,13 @@ try:
     st.markdown("### 📊 Bond Market Indicators")
     st.caption("Key drivers for Cathay Inv. Grade Bond (00725B) | Data delayed ~15m via Yahoo")
 
-    # Fetch Indicators
-    # ^TNX = 10-Year Treasury Yield (Yahoo provides it as Index, e.g., 42.50 = 4.25%)
     tnx_val, tnx_delta = get_indicator("^TNX")
-    # TWD=X = USD/TWD Exchange Rate
     twd_val, twd_delta = get_indicator("TWD=X")
-    # ^VIX = Volatility Index
     vix_val, vix_delta = get_indicator("^VIX")
 
     b1, b2, b3 = st.columns(3)
 
-    # 1. US 10-Year Yield
     if tnx_val is not None:
-        # Yahoo ^TNX is often index value (e.g., 42.5). Convert to % (4.25)
-        # Check logic: if val > 20, assume it needs /10. If < 10, assume it's already %.
         final_yield = tnx_val / 10 if tnx_val > 10 else tnx_val
         final_delta = tnx_delta / 10 if tnx_val > 10 else tnx_delta
         
@@ -218,13 +206,12 @@ try:
             label="US 10-Year Yield",
             value=f"{final_yield:.2f}%",
             delta=f"{final_delta:.2f} pts",
-            delta_color="inverse", # Rising yield = Bad for Bond Price
+            delta_color="inverse", 
             help="The benchmark risk-free rate. When this goes UP, bond prices generally go DOWN."
         )
     else:
         b1.metric("US 10-Year Yield", "N/A")
 
-    # 2. USD/TWD Exchange Rate
     if twd_val is not None:
         b2.metric(
             label="USD / TWD Rate",
@@ -235,13 +222,12 @@ try:
     else:
         b2.metric("USD / TWD Rate", "N/A")
 
-    # 3. VIX Index
     if vix_val is not None:
         b3.metric(
             label="VIX (Fear Index)",
             value=f"{vix_val:.2f}",
             delta=f"{vix_delta:.2f}",
-            delta_color="inverse", # High VIX = High Risk/Panic
+            delta_color="inverse", 
             help="Global market volatility. High VIX often means investors are scared, which can affect credit spreads."
         )
     else:
@@ -298,7 +284,7 @@ try:
     rc2.metric("Realized Sales", f"NT$ {realized_profit:,.0f}")
     rc3.metric("Dividends Received", f"NT$ {total_dividends:,.0f}")
 
-    st.caption("Values in NTD. Data delayed by 15 mins (Yahoo Finance).")
+    st.caption("Values in NTD. Data delayed by ~15 mins (Yahoo Finance).")
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
