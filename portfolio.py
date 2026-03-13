@@ -79,7 +79,7 @@ NAME_MAP = {
     "2382.TW": "Quanta Computer",
     "00725B.TWO": "Cathay Inv. Grade Bond",
     "00725B.TW": "Cathay Inv. Grade Bond",
-    "0056.TW": "Yuanta High Dividend ETF"
+    "0056.TW": "Yuanta High Dividend ETF",
     "00713.TW": "Yuanta Div Low Vol ETF"
 }
 
@@ -289,4 +289,5 @@ try:
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
+
 
