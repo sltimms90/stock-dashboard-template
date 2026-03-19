@@ -32,22 +32,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- PASSWORD PROTECTION ---
-if "app_password" in st.secrets:
-    password = st.secrets["app_password"]
-    if "authenticated" not in st.session_state:
-        c1, c2, c3 = st.columns([1,2,1])
-        with c2:
-            st.title("🔒 Portfolio Login")
-            entered_password = st.text_input("Enter Password", type="password")
-            if st.button("Login"):
-                if entered_password == password:
-                    st.session_state["authenticated"] = True
-                    st.rerun()
-                else:
-                    st.error("Incorrect Password")
-        st.stop()
-
 # --- HELPER 1: ASSET PRICE FETCHER (Yahoo Only) ---
 def get_price(ticker_yf):
     try:
