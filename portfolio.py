@@ -32,6 +32,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# (PASSWORD BLOCK REMOVED - App now loads instantly!)
+
 # --- HELPER 1: ASSET PRICE FETCHER (Yahoo Only) ---
 def get_price(ticker_yf):
     try:
@@ -61,10 +63,9 @@ def get_indicator(ticker_yf):
 NAME_MAP = {
     "2330.TW": "TSMC (Taiwan Semi)",
     "2382.TW": "Quanta Computer",
-    "00725B.TWO": "Cathay Inv. Grade Bond",
-    "00725B.TW": "Cathay Inv. Grade Bond",
-    "0056.TW": "Yuanta High Dividend ETF",
-    "00713.TW": "Yuanta Div Low Vol ETF"
+    "00725B.TWO": "Cathay Inv. Grade Bond", # Kept just in case you review historical data
+    "0056.TW": "Yuanta High Div ETF",
+    "00713.TW": "Yuanta Low Vol ETF"
 }
 
 # --- LOAD DATA ---
@@ -114,13 +115,13 @@ try:
     invested_capital = total_cost_basis + total_cash
     inception_return_pct = (gross_investment_pnl / invested_capital * 100) if invested_capital else 0
 
-    # Allocation
-    bond_val = df[df["Ticker"].str.contains("00725")]["Market_Value"].sum() if not df.empty else 0
-    equity_val = stock_value - bond_val
+    # NEW ALLOCATION LOGIC (Tech vs Dividend ETFs vs Cash)
+    dividend_etf_val = df[df["Ticker"].isin(["0056.TW", "00713.TW"])]["Market_Value"].sum() if not df.empty else 0
+    tech_stock_val = stock_value - dividend_etf_val
     cash_val = total_cash
     
-    bond_pct = (bond_val / total_assets) if total_assets else 0
-    equity_pct = (equity_val / total_assets) if total_assets else 0
+    tech_pct = (tech_stock_val / total_assets) if total_assets else 0
+    div_pct = (dividend_etf_val / total_assets) if total_assets else 0
     cash_pct = (cash_val / total_assets) if total_assets else 0
 
     # --- LAYOUT ---
@@ -142,19 +143,19 @@ try:
     # 3. CURRENT POSITION
     st.markdown("### 🟢 Current Position")
     
-    # Allocation Chart
+    # Updated Allocation Chart
     alloc_df = pd.DataFrame({
-        'Category': ['Bonds', 'Equities', 'Cash'],
-        'Value': [bond_val, equity_val, cash_val]
+        'Category': ['Tech Stocks', 'Dividend ETFs', 'Cash'],
+        'Value': [tech_stock_val, dividend_etf_val, cash_val]
     })
     
-    st.caption(f"📊 **Allocation:** Bonds: {bond_pct:.1%} | Equities: {equity_pct:.1%} | Cash: {cash_pct:.1%}")
+    st.caption(f"📊 **Allocation:** Tech: {tech_pct:.1%} | Div ETFs: {div_pct:.1%} | Cash: {cash_pct:.1%}")
     
     chart = alt.Chart(alloc_df).mark_bar(size=35).encode(
         x=alt.X('Value', axis=None, stack='normalize'),
         color=alt.Color('Category', scale=alt.Scale(
-            domain=['Bonds', 'Equities', 'Cash'],
-            range=['#1f77b4', '#2ca02c', '#7f7f7f']
+            domain=['Tech Stocks', 'Dividend ETFs', 'Cash'],
+            range=['#1f77b4', '#9467bd', '#7f7f7f'] # Blue for Tech, Purple for Divs, Grey for Cash
         ), legend=None),
         tooltip=['Category', alt.Tooltip('Value', format=',.0f')]
     ).properties(height=40)
@@ -173,36 +174,32 @@ try:
     
     st.markdown("---")
 
-    # --- NEW: BOND MARKET INDICATORS ---
-    st.markdown("### 📊 Bond Market Indicators")
-    st.caption("Key drivers for Cathay Inv. Grade Bond (00725B) | Data delayed ~15m via Yahoo")
+    # --- NEW: MACRO & TECH INDICATORS ---
+    st.markdown("### 📊 Macro & Tech Indicators")
+    st.caption("Key drivers for Tech & Dividend Portfolios | Data delayed ~15m via Yahoo")
 
-    tnx_val, tnx_delta = get_indicator("^TNX")
+    sox_val, sox_delta = get_indicator("^SOX")
     twd_val, twd_delta = get_indicator("TWD=X")
     vix_val, vix_delta = get_indicator("^VIX")
 
     b1, b2, b3 = st.columns(3)
 
-    if tnx_val is not None:
-        final_yield = tnx_val / 10 if tnx_val > 10 else tnx_val
-        final_delta = tnx_delta / 10 if tnx_val > 10 else tnx_delta
-        
+    if sox_val is not None:
         b1.metric(
-            label="US 10-Year Yield",
-            value=f"{final_yield:.2f}%",
-            delta=f"{final_delta:.2f} pts",
-            delta_color="inverse", 
-            help="The benchmark risk-free rate. When this goes UP, bond prices generally go DOWN."
+            label="PHLX Semi Index (^SOX)",
+            value=f"{sox_val:,.2f}",
+            delta=f"{sox_delta:,.2f} pts",
+            help="Global semiconductor barometer. Highly correlated with TSMC and Quanta."
         )
     else:
-        b1.metric("US 10-Year Yield", "N/A")
+        b1.metric("PHLX Semi Index", "N/A")
 
     if twd_val is not None:
         b2.metric(
             label="USD / TWD Rate",
             value=f"{twd_val:.2f} TWD",
             delta=f"{twd_delta:.2f}",
-            help="Current price of 1 USD in TWD. A stronger dollar (higher number) usually helps 00725B's value."
+            help="Crucial for export-heavy tech. A stronger dollar generally boosts TWD earnings for TSMC/Quanta."
         )
     else:
         b2.metric("USD / TWD Rate", "N/A")
@@ -213,7 +210,7 @@ try:
             value=f"{vix_val:.2f}",
             delta=f"{vix_delta:.2f}",
             delta_color="inverse", 
-            help="Global market volatility. High VIX often means investors are scared, which can affect credit spreads."
+            help="Global market volatility. Sudden spikes indicate panic, which 00713 (Low Vol ETF) is designed to resist."
         )
     else:
         b3.metric("VIX (Fear Index)", "N/A")
@@ -273,5 +270,3 @@ try:
 
 except Exception as e:
     st.error(f"Error loading dashboard: {e}")
-
-
